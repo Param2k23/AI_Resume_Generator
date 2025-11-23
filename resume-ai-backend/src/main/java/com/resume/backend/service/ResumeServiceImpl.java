@@ -1,56 +1,59 @@
 package com.resume.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.json.JSONObject;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.core.io.ClassPathResource;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 
 @Service
 public class ResumeServiceImpl implements ResumeService {
 
-    private ChatClient chatClient;
+    // 1. Define the URL for the external AI Microservice
+    @Value("${ai.service.url:http://localhost:8081/api/ai/generate}")
+    private String aiServiceUrl;
 
-    public ResumeServiceImpl(ChatClient.Builder builder) {
-        this.chatClient = builder.build();
+    private final WebClient webClient;
+
+    public ResumeServiceImpl(WebClient.Builder webClientBuilder) {
+        this.webClient = webClientBuilder.baseUrl(aiServiceUrl).build();
     }
 
     @Override
     public   Map<String, Object> generateResumeResponse(String userResumeDescription) throws IOException {
-
-        String promptString = this.loadPromptFromFile("resume_prompt.txt");
-        String promptContent = this.putValuesToTemplate(promptString, Map.of(
-                "userDescription", userResumeDescription
-        ));
-        Prompt prompt = new Prompt(promptContent);
-        String response = chatClient.prompt(prompt).call().content();
+        Map<String, String> requestBody = Map.of("userDescription", userResumeDescription);
+        String response = webClient.post()
+                .uri("") // The base URL is already set in the WebClient
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(BodyInserters.fromValue(requestBody))
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
         Map<String, Object> stringObjectMap = parseMultipleResponses(response);
-        //modify :
         return stringObjectMap;
     }
 
 
-    String loadPromptFromFile(String filename) throws IOException {
-        try (var inputStream = new ClassPathResource(filename).getInputStream()) {
-            return new String(inputStream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-        }
-    }
+    // String loadPromptFromFile(String filename) throws IOException {
+    //     try (var inputStream = new ClassPathResource(filename).getInputStream()) {
+    //         return new String(inputStream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+    //     }
+    // }
 
-    String putValuesToTemplate(String template, Map<String, String> values) {
-        for (Map.Entry<String, String> entry : values.entrySet()) {
+    // String putValuesToTemplate(String template, Map<String, String> values) {
+    //     for (Map.Entry<String, String> entry : values.entrySet()) {
 
-            template = template.replace("{{" + entry.getKey() + "}}", entry.getValue());
+    //         template = template.replace("{{" + entry.getKey() + "}}", entry.getValue());
 
-        }
-        return template;
-    }
+    //     }
+    //     return template;
+    // }
 
 
     public static Map<String, Object> parseMultipleResponses(String response) {
